@@ -33,7 +33,6 @@ def host_of(url):
     except ValueError:
         return ''
 
-
 def normalize_host(raw):
     raw = str(raw).strip()
     if not raw or raw.lower() in ('nan', 'none'): return ''
@@ -44,10 +43,8 @@ def normalize_host(raw):
         return ''
     return h
 
-
 def in_scope(host, domain):
     return host == domain or host.endswith('.' + domain)
-
 
 def public_url(url, domain=None):
     try:
@@ -62,8 +59,6 @@ def public_url(url, domain=None):
     except (OSError, ValueError):
         return False
 
-
-# Each worker owns its diagnostic records; crawling decisions remain unchanged.
 _diag_local = threading.local()
 
 def log_request(url, status, detail='', elapsed=0.0):
@@ -84,7 +79,6 @@ def log_page_diagnostic(requested, final_url, title, text_length, text_match, ht
                                   'HTML内のみ一致（非表示要素等の可能性）' if html_match else
                                   'HTML・抽出本文とも一致なし')})
 
-
 def safe_get(url, domain, session):
     start = time.monotonic()
     if not public_url(url, domain):
@@ -103,7 +97,6 @@ def safe_get(url, domain, session):
                 log_request(url, r.status_code, 'リダイレクト先が許可範囲外または検証不可', time.monotonic()-start)
                 return None
             r = session.get(target, headers=HEADERS, timeout=TIMEOUT, allow_redirects=False, stream=True)
-        # 一時的なサーバーエラーだけ控えめに再試行。403や429は再試行しない。
         if r.status_code in (500, 502, 503, 504):
             first_status = r.status_code
             r.close()
@@ -136,11 +129,9 @@ def safe_get(url, domain, session):
         log_request(url, '通信エラー', type(exc).__name__+': '+str(exc), time.monotonic()-start)
         return None
 
-
 def allowed(url, robots):
     try: return robots.can_fetch(USER_AGENT, url)
     except Exception: return False
-
 
 def load_robots(base, domain, session):
     robots = RobotFileParser()
@@ -153,7 +144,6 @@ def load_robots(base, domain, session):
     robots.parse(lines)
     maps = [line.split(':', 1)[1].strip() for line in lines if line.lower().startswith('sitemap:')]
     return robots, maps
-
 
 def sitemap_urls(base, domain, session, robots, extra_maps, max_pages):
     queue = deque(dict.fromkeys(extra_maps + [base + '/sitemap.xml']))
@@ -179,7 +169,6 @@ def sitemap_urls(base, domain, session, robots, extra_maps, max_pages):
             continue
     return list(dict.fromkeys(results))
 
-
 def extract_site_name(soup, domain):
     """Best-effort site name, not article title; never invent a name."""
     for attrs in ({'property': 'og:site_name'}, {'name': 'application-name'},
@@ -197,7 +186,6 @@ def extract_site_name(soup, domain):
                     return candidate
     return ''
 
-
 def check_page(url, domain, session, robots, keyword, link_patterns):
     if not allowed(url, robots): return None, []
     r = safe_get(url, domain, session)
@@ -209,7 +197,6 @@ def check_page(url, domain, session, robots, keyword, link_patterns):
     soup = BeautifulSoup(r.content, 'html.parser')
     anchors = [(urljoin(r.url, a.get('href', '')), a.get_text(' ', strip=True)) for a in soup.find_all('a', href=True)]
     links = sorted(set(href for href, _ in anchors))  # HTMLのリンク順による探索差を減らす
-    # パターン未指定時は「候補」のみ検出。ASPの中継先は検証しない。
     if link_patterns:
         matched_links = [href for href, _ in anchors if any(p.casefold() in href.casefold() for p in link_patterns)]
         link_status = 'パターン一致' if matched_links else 'なし'
@@ -220,7 +207,6 @@ def check_page(url, domain, session, robots, keyword, link_patterns):
     for tag in soup(['script', 'style', 'noscript']): tag.decompose()
     text = soup.get_text(' ', strip=True)
     text_match = keyword.casefold() in text.casefold() if keyword else False
-    # Keep raw HTML separate: helps distinguish dynamic-rendered text from text extraction.
     html_match = keyword.casefold() in r.text.casefold() if keyword else False
     title_text = soup.title.get_text(' ', strip=True)[:200] if soup.title else ''
     log_page_diagnostic(url, r.url, title_text, len(text), text_match, html_match)
@@ -229,7 +215,6 @@ def check_page(url, domain, session, robots, keyword, link_patterns):
             'matched_links': ' | '.join(dict.fromkeys(matched_links))[:3000],
             'title': title_text,
             'site_name': extract_site_name(soup, domain)}, links
-
 
 def read_urls(upload):
     name = upload.name.lower()
@@ -240,7 +225,6 @@ def read_urls(upload):
             except UnicodeDecodeError: pass
         raise ValueError('CSVの文字コードを読み取れません')
     return pd.read_excel(upload, dtype=str)
-
 
 def excel_bytes(details, summary, errors, history, diagnostics, page_diagnostics):
     out = io.BytesIO()
@@ -257,7 +241,6 @@ def excel_bytes(details, summary, errors, history, diagnostics, page_diagnostics
                 letter = col[0].column_letter
                 ws.column_dimensions[letter].width = min(65, max(15, max(len(str(cell.value or '')) for cell in list(col)[:100]) + 2))
     return out.getvalue()
-
 
 st.title('🔎 掲載URL収集ツール')
 st.markdown('''<style>
@@ -315,8 +298,6 @@ if raw_urls:
                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                        on_click='ignore')
 
-# v1.5: 公開インデックス照会は停止。取得判定の診断を優先する。
-
 def url_priority(url, keyword):
     """Higher scores first, deterministic; only affects URLs after explicit inputs."""
     p = urlparse(url)
@@ -329,7 +310,6 @@ def url_priority(url, keyword):
                           ('card', 6), ('finance', 6), ('借入', 10), ('審査', 6)]:
         if token in path: score += weight
     return (-score, len(p.path), url)
-
 
 def collect_domain(domain, keyword, mode, max_pages, delay, settings_id, seed_urls):
     details, errors = [], []
@@ -349,8 +329,6 @@ def collect_domain(domain, keyword, mode, max_pages, delay, settings_id, seed_ur
             raise RuntimeError('robots.txtを確認できないため巡回をスキップしました')
         crawl_delay = robots.crawl_delay(USER_AGENT)
         actual_delay = max(float(delay), float(crawl_delay or 0))
-        # サイトマップは候補収集専用。実際のページ確認は max_pages 以内。
-        # 入力された掲載URLを最優先で検査。旧版で拾えたURLの取りこぼしを防ぐ。
         sitemap_candidates = sitemap_urls(base, domain, session, robots, maps, int(max_pages) * 3)
         candidates = list(seed_urls) + sorted(sitemap_candidates, key=lambda u: url_priority(u, keyword))
         candidates.append(base + '/')
@@ -373,7 +351,6 @@ def collect_domain(domain, keyword, mode, max_pages, delay, settings_id, seed_ur
                 continue
             visited.add(url)
             selected_urls.append(url)
-            # 同一ドメインのページ確認間隔。異なるドメインは並列に進む。
             remaining = actual_delay - (time.monotonic() - last_request_at)
             if remaining > 0: time.sleep(remaining)
             last_request_at = time.monotonic()
@@ -416,7 +393,6 @@ def collect_domain(domain, keyword, mode, max_pages, delay, settings_id, seed_ur
     _diag_local.records = None
     _diag_local.page_records = None
     return details, errors, history, records, page_records
-
 
 st.caption('ドメイン間は5件並列。入力URLを最優先、サイトマップとサイト内リンクは関連語を含むURLを優先します。')
 workers = 5  # 同時処理ドメイン数（UIには表示しない）
@@ -465,7 +441,6 @@ if st.button('🚀 掲載URLを収集する', type='primary', disabled=not domai
     }
     st.balloons()
 
-# ダウンロードによる再実行でも結果を消さず、次の収集開始まで保持する。
 if 'last_result' in st.session_state:
     result = st.session_state['last_result']
     # Streamlit Community Cloud may preserve session_state across code redeploys.
